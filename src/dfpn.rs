@@ -5,7 +5,6 @@ use std::hash::{Hash, Hasher};
 use std::u64::MAX;
 use std::cmp::min;
 use std::time::Instant;
-use shogi::piece_type::PieceType::King;
 
 pub fn dfpn(pos: &mut Position) {
     let start = Instant::now();
@@ -21,19 +20,66 @@ pub fn dfpn(pos: &mut Position) {
     }
 
     println!("result: {} (p={}, d={})", if d ==MAX {"tsumi"} else if p==MAX {"futsumi"} else {"?"}, p, d);
+    print_tsumi(pos, p==0, hash_table);
     println!("nps = {} / {} = {}", cnt, start.elapsed().as_secs_f64(), f64::from(cnt as u32)/start.elapsed().as_secs_f64());
     println!("nps (incl. temporary) = {} / {} = {}", cnt_tmp, start.elapsed().as_secs_f64(), f64::from(cnt_tmp as u32)/start.elapsed().as_secs_f64());
 }
 
 fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashMap<u64, (u64, u64)>) -> (u64, u64, u64, u64) {
-    let turn = pos.side_to_move();
-    let mut node_count_incl_temporary = 1;
     // look up hash
     let hash = calculate_hash(pos);
     let (p, d) = look_up_hash(&hash, &hash_table);
     if phi < *p && delta < *d {
-        return (*p, *d, 1, node_count_incl_temporary);
+        return (*p, *d, 1, 1);
     }
+
+    let (children, mut node_count_incl_temporary) = generate_children(pos);
+
+    // Leaf node
+    if children.is_empty() {
+        // println!("LEAF TSUMI");
+        put_in_hash(hash, MAX, 0, hash_table);
+        return (MAX, 0, 1, node_count_incl_temporary);
+    }
+
+    // println!("{:?}", children);
+
+    // 3. Prevent cycle
+    put_in_hash(hash, phi, delta, hash_table);
+
+    // 4 Iterative deepening
+    let mut node_count = 0;
+    loop {
+        let md = min_delta(&children, hash_table);
+        let mp = sum_phi(&children, hash_table, &pos);
+        if phi <= md || delta <= mp {
+            put_in_hash(hash, md, mp, hash_table);
+            return (md, mp, node_count, node_count_incl_temporary);
+        }
+        let (best_move, phi_c, delta_c, delta_2) = select_child(&children, hash_table);
+        let phi_n_c = if phi_c == MAX-1 {
+            MAX
+        } else if delta >= MAX-1 {
+            MAX-1
+        } else {
+            delta + phi_c - mp
+        };
+        let delta_n_c = if delta_c == MAX - 1 {
+            MAX
+        } else {
+            if delta_2 == MAX { phi } else { min(phi, delta_2+1) }
+        };
+        pos.make_move(*best_move).unwrap();
+        let (_, _, cnt, cnt_incl_temporary) = mid(pos, phi_n_c, delta_n_c, hash_table);
+        node_count += cnt;
+        node_count_incl_temporary += cnt_incl_temporary;
+        pos.unmake_move().unwrap();
+    }
+}
+
+fn generate_children(pos: &mut Position) -> (Vec<(u64, Move)>, u64) {
+    let mut node_count_incl_temporary = 0;
+    let turn = pos.side_to_move();
     let mut children: Vec<(u64, Move)> = Vec::new();
 
     // Generate moves
@@ -143,47 +189,7 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashMap<u64, (
             }
         }
     }
-
-    // Leaf node
-    if children.is_empty() {
-        // println!("LEAF TSUMI");
-        put_in_hash(hash, MAX, 0, hash_table);
-        return (MAX, 0, 1, node_count_incl_temporary);
-    }
-
-    // println!("{:?}", children);
-
-    // 3. Prevent cycle
-    put_in_hash(hash, phi, delta, hash_table);
-
-    // 4 Iterative deepening
-    let mut node_count = 0;
-    loop {
-        let md = min_delta(&children, hash_table);
-        let mp = sum_phi(&children, hash_table, &pos);
-        if phi <= md || delta <= mp {
-            put_in_hash(hash, md, mp, hash_table);
-            return (md, mp, node_count, node_count_incl_temporary);
-        }
-        let (best_move, phi_c, delta_c, delta_2) = select_child(&children, hash_table);
-        let phi_n_c = if phi_c == MAX-1 {
-            MAX
-        } else if delta >= MAX-1 {
-            MAX-1
-        } else {
-            delta + phi_c - mp
-        };
-        let delta_n_c = if delta_c == MAX - 1 {
-            MAX
-        } else {
-            if delta_2 == MAX { phi } else { min(phi, delta_2+1) }
-        };
-        pos.make_move(*best_move).unwrap();
-        let (_, _, cnt, cnt_incl_temporary) = mid(pos, phi_n_c, delta_n_c, hash_table);
-        node_count += cnt;
-        node_count_incl_temporary += cnt_incl_temporary;
-        pos.unmake_move().unwrap();
-    }
+    (children, node_count_incl_temporary)
 }
 
 fn select_child<'a>(children: &'a Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u64)>) -> (&'a Move, u64, u64, u64) {
@@ -228,7 +234,7 @@ fn min_delta(children: &Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u6
 
 fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u64)>, pos: &Position) -> u64 {
     let mut sum = 0;
-    for (hash, mov) in children {
+    for (hash, _) in children {
         let (p, _) = look_up_hash(&hash, &hash_table);
         if *p == MAX {
             // println!("Hmm going to overflow? {} {}", mov, &pos);
@@ -262,4 +268,26 @@ fn check_candidates (pos: &Position, color: Color) -> HashMap<PieceType, Bitboar
             ret
         })
         .collect()
+}
+
+fn print_tsumi(pos: &mut Position, is_tsumi: bool, hash_table: HashMap<u64, (u64, u64)>) {
+    let attacker = pos.side_to_move() == Color::Black;
+    let mut best = Option::None;
+    for (hash, mov) in generate_children(pos).0 {
+        let (p, d) = look_up_hash(&hash, &hash_table);
+        if if is_tsumi == attacker { *d == 0 } else { *p == 0 } {
+            best = Option::Some(mov);
+        }
+        // println!("{} {},{}", mov, p, d);
+    }
+    match best {
+        Option::Some(best) => {
+            print!("{} ", best);
+            pos.make_move(best);
+            print_tsumi(pos, is_tsumi, hash_table);
+        },
+        _ => {
+            println!("");
+        }
+    }
 }
