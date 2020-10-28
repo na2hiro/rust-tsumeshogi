@@ -1,17 +1,37 @@
+extern crate wasm_bindgen;
+
 use shogi::{Position, Move, Color, PieceType, Piece, Square, Bitboard};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::u64::MAX;
 use std::cmp::min;
-use std::time::Instant;
+use wasm_bindgen::prelude::*;
 
-pub fn dfpn(pos: &mut Position) {
-    let start = Instant::now();
+use serde::{Serialize, Deserialize};
+
+#[wasm_bindgen]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    is_tsumi: bool,
+    moves: Vec<String>,
+    nodes: u64,
+    nodes_incl_temporary: u64,
+}
+impl SearchResult {
+    pub fn nodes(&self) -> u64 {
+        self.nodes
+    }
+    pub fn nodes_incl_temporary(&self) -> u64 {
+        self.nodes_incl_temporary
+    }
+}
+
+pub fn dfpn(pos: &mut Position) -> SearchResult {
     let mut hash_table = HashMap::new();
     let (mut p, mut d, mut cnt, mut cnt_tmp) = mid(pos, MAX - 1, MAX - 1, &mut hash_table);
     if p != MAX && d != MAX {
-        println!("second time");
+        // println!("second time");
         let (p2, d2, cnt2, cnt_tmp2) = mid(pos, p, d, &mut hash_table);
         p=p2;
         d=d2;
@@ -19,10 +39,12 @@ pub fn dfpn(pos: &mut Position) {
         cnt_tmp+= cnt_tmp2;
     }
 
-    println!("result: {} (p={}, d={})", if d ==MAX {"tsumi"} else if p==MAX {"futsumi"} else {"?"}, p, d);
-    print_tsumi(pos, p==0, hash_table);
-    println!("nps = {} / {} = {}", cnt, start.elapsed().as_secs_f64(), f64::from(cnt as u32)/start.elapsed().as_secs_f64());
-    println!("nps (incl. temporary) = {} / {} = {}", cnt_tmp, start.elapsed().as_secs_f64(), f64::from(cnt_tmp as u32)/start.elapsed().as_secs_f64());
+    SearchResult {
+        is_tsumi: d==MAX,
+        moves: get_moves(pos, p==0, hash_table),
+        nodes: cnt,
+        nodes_incl_temporary: cnt_tmp,
+    }
 }
 
 fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashMap<u64, (u64, u64)>) -> (u64, u64, u64, u64) {
@@ -51,7 +73,7 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashMap<u64, (
     let mut node_count = 0;
     loop {
         let md = min_delta(&children, hash_table);
-        let mp = sum_phi(&children, hash_table, &pos);
+        let mp = sum_phi(&children, hash_table);
         if phi <= md || delta <= mp {
             put_in_hash(hash, md, mp, hash_table);
             return (md, mp, node_count, node_count_incl_temporary);
@@ -232,12 +254,12 @@ fn min_delta(children: &Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u6
     min_delta
 }
 
-fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u64)>, pos: &Position) -> u64 {
+fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashMap<u64, (u64, u64)>) -> u64 {
     let mut sum = 0;
     for (hash, _) in children {
         let (p, _) = look_up_hash(&hash, &hash_table);
         if *p == MAX {
-            // println!("Hmm going to overflow? {} {}", mov, &pos);
+            // println!("Hmm going to overflow? {}", mov);
             return MAX;
         }
         sum += p;
@@ -270,7 +292,12 @@ fn check_candidates (pos: &Position, color: Color) -> HashMap<PieceType, Bitboar
         .collect()
 }
 
-fn print_tsumi(pos: &mut Position, is_tsumi: bool, hash_table: HashMap<u64, (u64, u64)>) {
+fn get_moves(pos: &mut Position, is_tsumi: bool, hash_table: HashMap<u64, (u64, u64)>) -> Vec<String> {
+    let mut moves = Vec::new();
+    get_moves_inner(pos, is_tsumi, hash_table, &mut moves);
+    moves
+}
+fn get_moves_inner(pos: &mut Position, is_tsumi: bool, hash_table: HashMap<u64, (u64, u64)>, moves: &mut Vec<String>) {
     let attacker = pos.side_to_move() == Color::Black;
     let mut best = Option::None;
     for (hash, mov) in generate_children(pos).0 {
@@ -278,16 +305,14 @@ fn print_tsumi(pos: &mut Position, is_tsumi: bool, hash_table: HashMap<u64, (u64
         if if is_tsumi == attacker { *d == 0 } else { *p == 0 } {
             best = Option::Some(mov);
         }
-        // println!("{} {},{}", mov, p, d);
     }
     match best {
         Option::Some(best) => {
-            print!("{} ", best);
-            pos.make_move(best);
-            print_tsumi(pos, is_tsumi, hash_table);
+            moves.push(best.to_string());
+            pos.make_move(best).unwrap();
+            get_moves_inner(pos, is_tsumi, hash_table, moves);
         },
         _ => {
-            println!("");
         }
     }
 }

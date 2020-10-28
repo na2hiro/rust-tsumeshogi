@@ -1,25 +1,50 @@
-mod dfpn;
+use tsumeshogi_lib::dfpn::{dfpn};
 
 use shogi::{Move, Position, Color, Piece, Square};
 use shogi::bitboard::Factory as BBFactory;
 use shogi::piece_type::PieceType;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use dfpn::dfpn;
+use std::time::Instant;
 
 fn main() {
-    BBFactory::init();
-    let mut pos = Position::new();
-
     // let sfen = "7nl/5+RBk1/9/6+r2/7pP/9/9/9/9 b Lb4g4s3n2l16p 1";
     // let sfen = "6b2/7kl/5G2p/6pp1/8P/9/9/9/9 b 2G2rbg4s4n3l14p 1";
     // let sfen = "8l/6s2/4S2kn/6pB1/8p/7R1/9/9/9 b Br4g2s3n3l16p 1";
-    // let sfen = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1";
-    // let sfen = "9/9/7ns/8+P/9/5n2k/3G2L2/2Gbp1S2/6G2 b 3L2rbg2s2n16p 1"; // my problem
-    pos.set_sfen(std::env::args().nth(1).unwrap().as_str()).unwrap();
+    // let sfen = "8l/6s2/4+P2kn/6pB1/8p/7R1/9/9/9 b Br4g3s3n3l15p 1";
+    // let sfen = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1"; // Tsumanai yatsu
+    let sfen = "9/9/7ns/8+P/9/5n2k/3G2L2/2Gbp1S2/6G2 b 3L2rbg2s2n16p 1"; // my problem
+    let sfen = "8k/9/7GP/9/9/9/9/9/9 b 2r2b3g4s4n4l17p 1";
+    // pos.set_sfen(std::env::args().nth(1).unwrap().as_str()).unwrap();
 
-    dfpn(&mut pos);
+    solve(sfen);
 }
+
+fn solve(sfen: &str) {
+    let start = Instant::now();
+
+    BBFactory::init();
+
+    let mut pos = Position::new();
+    pos.set_sfen(sfen).unwrap();
+
+    let result = dfpn(&mut pos);
+    let elapsed_time = start.elapsed().as_secs_f64();
+
+
+    println!("result: {:?}", result);
+    println!(
+        "nps = {} / {} = {}",
+        result.nodes(),
+        elapsed_time,
+        f64::from(result.nodes() as u32) / elapsed_time);
+    println!(
+        "nps (incl. temporary) = {} / {} = {}",
+        result.nodes_incl_temporary(),
+        elapsed_time,
+        f64::from(result.nodes_incl_temporary() as u32) / elapsed_time);
+}
+
 
 fn main0() {
     BBFactory::init();

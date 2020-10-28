@@ -6,5 +6,31 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "tsumeshogi_lib"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "tsumeshogi"
+path = "src/bin/main.rs"
+
 [dependencies]
-shogi = "0.9.0"
+# shogi = "0.9.0"
+shogi = { path = "/Users/dsch/proj/github-others/shogi-rs"}
+wasm-bindgen = {version="0.2.63", features = ["serde-serialize"] }
+serde = { version = "1.0", features = ["derive"] }
+
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1.6" } # TODO what is optional
+
+# `wee_alloc` is a tiny allocator for wasm that is only ~1K in code size
+# compared to the default allocator's ~10K. It is slower than the default
+# allocator, however.
+#
+# Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
+wee_alloc = { version = "0.4.5", optional = true }
+cfg-if = "0.1"
