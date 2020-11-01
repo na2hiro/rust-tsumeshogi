@@ -14,7 +14,9 @@ fn main() {
     // let sfen = "8l/6s2/4+P2kn/6pB1/8p/7R1/9/9/9 b Br4g3s3n3l15p 1";
     // let sfen = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1"; // Tsumanai yatsu
     let sfen = "9/9/7ns/8+P/9/5n2k/3G2L2/2Gbp1S2/6G2 b 3L2rbg2s2n16p 1"; // my problem
-    let sfen = "8k/9/7GP/9/9/9/9/9/9 b 2r2b3g4s4n4l17p 1";
+    // let sfen = "8k/9/7GP/9/9/9/9/9/9 b 2r2b3g4s4n4l17p 1";
+    // let sfen = "1k7/9/1GG6/9/9/9/9/9/9 b 2r2b2g4s4n4l18p 1"; // 3te with henchou
+    // let sfen = "7nl/7k1/9/5P1Pp/9/8N/9/9/9 b GS2r2b3g3s2n3l15p 1"; // 5te where king needs to choose longest path
     // pos.set_sfen(std::env::args().nth(1).unwrap().as_str()).unwrap();
 
     solve(sfen);
