@@ -1,14 +1,18 @@
 const CopyWebpackPlugin = require("copy-webpack-plugin");
+const WorkerPlugin = require("worker-plugin");
 const path = require('path');
 
+console.log(process.env.NODE_ENV)
+
 module.exports = {
-  entry: "./bootstrap.js",
+  entry: "./index.js",
   output: {
     path: path.resolve(__dirname, "dist"),
-    filename: "bootstrap.js",
+    filename: "index.js",
   },
-  mode: "development",
+  mode: process.env.NODE_ENV === 'production' ? "production" : "development",
   plugins: [
-    new CopyWebpackPlugin(['index.html'])
+    new CopyWebpackPlugin(['index.html']),
+    new WorkerPlugin()
   ],
 };

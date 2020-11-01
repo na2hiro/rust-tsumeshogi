@@ -6,12 +6,14 @@
   </head>
   <body>
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
-    <div style="display: flex">
-      <input id="input" style="flex-grow: 1" placeholder="SFEN" />
-      <button id="submit">Solve!</button>
-    </div>
-    <div id="answer" style="font-size: 30px"></div>
+    <form style="display: flex">
+      <input id="input" style="flex-grow: 1" placeholder="SFEN" value="9/9/9/4k4/9/4P4/9/9/9 b 4G2r2b4s4n4l17p 1" />
+      <button id="submit" type="submit">Solve!</button>
+    </form>
+    <div id="stopwatch" style="white-space: pre-line"></div>
+    <div id="answer" style="font-size: 30px">Loading...</div>
     <pre id="result"></pre>
-    <script src="./bootstrap.js"></script>
+    <div id="clock"></div>
+    <script src="./index.js"></script>
   </body>
 </html>

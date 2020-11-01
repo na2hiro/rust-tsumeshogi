@@ -1,3 +1,7 @@
 /target
 *.dot
 *.swp
+node_modules/
+.bin/
+.idea/
+/www/dist/
