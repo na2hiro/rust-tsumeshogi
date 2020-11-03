@@ -1,4 +1,7 @@
 pub mod dfpn;
+pub mod tsume;
+pub mod naive_df;
+pub mod shogi_utils;
 
 extern crate cfg_if;
 extern crate wasm_bindgen;

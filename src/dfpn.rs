@@ -1,13 +1,14 @@
 extern crate wasm_bindgen;
 
-use shogi::{Position, Move, Color, PieceType, Piece, Square, Bitboard};
+use shogi::{Position, Move, Color};
+use shogi::color::Color::Black;
+use shogi::bitboard::Factory as BBFactory;
+use crate::shogi_utils::{generate_children, calculate_hash};
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::u64::MAX;
 use std::cmp::{min, max};
-use wasm_bindgen::prelude::*;
 
+use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
 
 #[wasm_bindgen]
@@ -20,33 +21,58 @@ pub struct SearchResult {
     nodes_incl_temporary: u64,
 }
 impl SearchResult {
+    pub fn is_tsumi(&self) -> bool {
+        self.is_tsumi
+    }
     pub fn nodes(&self) -> u64 {
         self.nodes
+    }
+    pub fn moves(&self) -> &Vec<String> {
+        &self.moves
     }
     pub fn nodes_incl_temporary(&self) -> u64 {
         self.nodes_incl_temporary
     }
+    pub fn with_moves(&self, moves: Vec<String>) -> SearchResult {
+        SearchResult {
+            is_tsumi: self.is_tsumi,
+            moves,
+            ply_to_leaf: self.ply_to_leaf,
+            nodes: self.nodes,
+            nodes_incl_temporary: self.nodes_incl_temporary
+        }
+    }
 }
 
 type PlyToLeaf = i16;
-type HashTable = HashMap<u64, (u64, u64, PlyToLeaf)>;
+pub const PLY_MAX: PlyToLeaf = 32767;
+pub type HashTable = HashMap<u64, (u64, u64, PlyToLeaf)>;
 
 pub fn dfpn(pos: &mut Position) -> SearchResult {
     let mut hash_table: HashTable = HashMap::new();
-    let (mut p, mut d, mut ply_to_leaf, mut cnt, mut cnt_tmp) = mid(pos, MAX - 1, MAX - 1, &mut hash_table);
+    let mut result = dfpn_inner(pos, &mut hash_table);
+    if result.is_tsumi {
+        result.moves = get_moves(pos, &hash_table);
+    }
+    result
+}
+
+pub fn dfpn_inner(pos: &mut Position, hash_table: &mut HashTable) -> SearchResult {
+    let attacker = pos.side_to_move() == Black;
+    let (mut p, mut d, mut ply_to_leaf, mut cnt, mut cnt_tmp) = mid(pos, MAX - 1, MAX - 1, hash_table);
     if p != MAX && d != MAX {
-        // println!("second time");
-        let (p2, d2, ply_to_leaf2, cnt2, cnt_tmp2) = mid(pos, p, d, &mut hash_table);
-        p=p2;
+        println!("second time");
+        let (_, d2, ply_to_leaf2, cnt2, cnt_tmp2) = mid(pos, p, d, hash_table);
         d=d2;
         ply_to_leaf = ply_to_leaf2;
         cnt+=cnt2;
         cnt_tmp+= cnt_tmp2;
     }
 
+    let is_tsumi = if attacker { d == MAX } else { d == 0 };
     SearchResult {
-        is_tsumi: d==MAX,
-        moves: get_moves(pos, p==0, hash_table),
+        is_tsumi,
+        moves: Vec::new(),
         ply_to_leaf,
         nodes: cnt,
         nodes_incl_temporary: cnt_tmp,
@@ -61,9 +87,9 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashTable) -> 
         return (*p, *d, *ply_to_end, 1, 1);
     }
 
-    // println!("{}", pos);
-
     let (children, mut node_count_incl_temporary) = generate_children(pos);
+
+    // println!("{}, {:?}", pos, children);
 
     // Leaf node
     if children.is_empty() {
@@ -100,7 +126,10 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashTable) -> 
         } else {
             if delta_2 == MAX { phi } else { min(phi, delta_2+1) }
         };
-        pos.make_move(*best_move).unwrap();
+        match pos.make_move(*best_move) {
+            Ok(_) => {}
+            Err(e) => {panic!("move failure {} {}, {}, {}", e, best_move, pos, pos.to_sfen())}
+        };
         let (_, _, _, cnt, cnt_incl_temporary) = mid(pos, phi_n_c, delta_n_c, hash_table);
         node_count += cnt;
         node_count_incl_temporary += cnt_incl_temporary;
@@ -109,121 +138,6 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashTable) -> 
             Err(_) => panic!("{}, {:?}", pos, pos.move_history().last().unwrap()),
         }
     }
-}
-
-fn generate_children(pos: &mut Position) -> (Vec<(u64, Move)>, u64) {
-    let mut node_count_incl_temporary = 0;
-    let turn = pos.side_to_move();
-    let mut children: Vec<(u64, Move)> = Vec::new();
-
-    // Generate moves
-    if turn == Color::Black {
-        // Optimization
-        let candidates = check_candidates(pos, turn);
-
-        // TODO: Akioute is not included
-        /*
-        let bb = pos.player_bb(turn);
-        for sq in *bb {
-            let piece = pos.piece_at(sq).unwrap();
-            let tos = &pos.move_candidates(sq, piece) & candidates.get(&piece.piece_type).unwrap_or(&Bitboard::empty());
-            for to in tos {
-                for promote in [false, true].iter() {
-                    let mov = Move::Normal { from: sq, to, promote: *promote };
-                    node_count_incl_temporary += 1;
-                    match pos.make_move(mov) {
-                        Ok(_) => {
-                            if turn == Color::White || pos.in_check(Color::White) {
-                                println!(" {}", mov);
-                                children.push((calculate_hash(pos), mov))
-                            }
-                            pos.unmake_move().unwrap();
-                        },
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-         */
-        let bb = pos.player_bb(turn);
-        for sq in *bb {
-            let piece = pos.piece_at(sq).unwrap();
-            let tos = pos.move_candidates(sq, piece);
-            for to in tos {
-                for promote in [false, true].iter() {
-                    let mov = Move::Normal { from: sq, to, promote: *promote };
-                    node_count_incl_temporary += 1;
-                    match pos.make_move(mov) {
-                        Ok(_) => {
-                            if turn == Color::White || pos.in_check(Color::White) {
-                                children.push((calculate_hash(pos), mov))
-                            }
-                            pos.unmake_move().unwrap();
-                        },
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-        for (pt, bb) in candidates {
-            if pos.hand(Piece { piece_type: pt, color: turn }) > 0 {
-                for sq in bb {
-                    let mov = Move::Drop { to: sq, piece_type: pt };
-                    node_count_incl_temporary += 1;
-                    match pos.make_move(mov) {
-                        Ok(_) => {
-                            if turn == Color::White || pos.in_check(Color::White) {
-                                // println!(" {}", mov);
-                                children.push((calculate_hash(pos), mov))
-                            }
-                            pos.unmake_move().unwrap();
-                        },
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-    } else {
-        let bb = pos.player_bb(turn);
-        for sq in *bb {
-            let piece = pos.piece_at(sq).unwrap();
-            let tos = pos.move_candidates(sq, piece);
-            for to in tos {
-                for promote in [false, true].iter() {
-                    let mov = Move::Normal { from: sq, to, promote: *promote };
-                    node_count_incl_temporary += 1;
-                    match pos.make_move(mov) {
-                        Ok(_) => {
-                            if turn == Color::White || pos.in_check(Color::White) {
-                                children.push((calculate_hash(pos), mov))
-                            }
-                            pos.unmake_move().unwrap();
-                        },
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-        for piece_type in &[PieceType::Pawn, PieceType::Lance, PieceType::Knight, PieceType::Silver, PieceType::Gold, PieceType::Bishop, PieceType::Rook] {
-            if pos.hand(Piece { piece_type: *piece_type, color: turn }) > 0 {
-                for sq in 1..81 {
-                    let sq = Square::from_index(sq).unwrap();
-                    let mov = Move::Drop { to: sq, piece_type: *piece_type };
-                    node_count_incl_temporary += 1;
-                    match pos.make_move(mov) {
-                        Ok(_) => {
-                            if turn == Color::White || pos.in_check(Color::White) {
-                                children.push((calculate_hash(pos), mov))
-                            }
-                            pos.unmake_move().unwrap();
-                        },
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-    }
-    (children, node_count_incl_temporary)
 }
 
 fn select_child<'a>(children: &'a Vec<(u64, Move)>, hash_table: &mut HashTable) -> (&'a Move, u64, u64, u64) {
@@ -249,23 +163,25 @@ fn select_child<'a>(children: &'a Vec<(u64, Move)>, hash_table: &mut HashTable) 
     return (best_move.unwrap(), phi_c, delta_c, delta_2);
 }
 
-fn look_up_hash<'a>(hash: &u64, hash_table: &'a HashTable) -> &'a (u64, u64, PlyToLeaf) {
+pub fn look_up_hash<'a>(hash: &u64, hash_table: &'a HashTable) -> &'a (u64, u64, PlyToLeaf) {
     hash_table.get(hash).unwrap_or(&(1u64, 1u64, 0))
 }
 
-fn put_in_hash(hash: u64, phi: u64, delta: u64, ply_to_leaf: PlyToLeaf, hash_table: &mut HashTable) {
+pub fn put_in_hash(hash: u64, phi: u64, delta: u64, ply_to_leaf: PlyToLeaf, hash_table: &mut HashTable) {
     hash_table.insert(hash, (phi, delta, ply_to_leaf));
 }
 
-/// Current is OR -> child is AND: min(pn)
-/// 0 -> one of the children leads to tsumi
-/// MAX -> all of the children are not tsumi
-/// Current is AND -> child is OR: min(dn)
-/// 0 -> one of the children leads to not tsumi
-/// MAX -> all of the children are tsumi
+/// Calculates minimum of delta of children
+///
+/// * Current is OR -> child is AND: min(pn)
+///   * 0 -> one of the children leads to tsumi
+///   * MAX -> all of the children are not tsumi
+/// * Current is AND -> child is OR: min(dn)
+///   * 0 -> one of the children leads to not tsumi
+///   * MAX -> all of the children are tsumi
 fn min_delta(children: &Vec<(u64, Move)>, hash_table: &mut HashTable) -> (u64, PlyToLeaf) {
     let mut min_delta = MAX;
-    let mut ply_to_leaf_min = 32767;
+    let mut ply_to_leaf_min = PLY_MAX;
     let mut ply_to_leaf_max = -1;
     for (hash, _) in children {
         let (_, d, ply_to_leaf_c) = look_up_hash(&hash, &hash_table);
@@ -280,12 +196,14 @@ fn min_delta(children: &Vec<(u64, Move)>, hash_table: &mut HashTable) -> (u64, P
     (min_delta, if min_delta==0 {ply_to_leaf_min} else {ply_to_leaf_max})
 }
 
-/// Current is OR -> child is AND: sum(dn)
-/// 0 -> all of the children are not tsumi
-/// MAX -> one of the children leads to tsumi
-/// Current is AND -> child is OR: sum(pn)
-/// 0 -> all of the children are tsumi
-/// MAX -> one of the children leads to not tsumi
+/// Calculates sum of phi of children
+///
+/// * Current is OR -> child is AND: sum(dn)
+///   * 0 -> all of the children are not tsumi
+///   * MAX -> one of the children leads to tsumi
+/// * Current is AND -> child is OR: sum(pn)
+///   * 0 -> all of the children are tsumi
+///   * MAX -> one of the children leads to not tsumi
 fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashTable) -> u64 {
     let mut sum = 0;
     for (hash, _) in children {
@@ -299,43 +217,18 @@ fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashTable) -> u64 {
     sum
 }
 
-fn calculate_hash(pos: &Position) -> u64 {
-    let str = format!("{}", pos);
-    calculate_hash_gen(&str)
-}
-
-fn calculate_hash_gen<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
-}
-
-fn check_candidates (pos: &Position, color: Color) -> HashMap<PieceType, Bitboard> {
-    let sq_king = pos.find_king(color.flip());
-    if sq_king.is_none() { return HashMap::new() }
-    let sq_king = sq_king.unwrap();
-
-    // TODO Add akioute
-    PieceType::iter()
-        .map(|pt| {
-            let ret = (pt, pos.move_candidates(sq_king, Piece{piece_type: pt, color: color.flip()}));
-            ret
-        })
-        .collect()
-}
-
-fn get_moves(pos: &mut Position, is_tsumi: bool, hash_table: HashTable) -> Vec<String> {
+pub fn get_moves(pos: &mut Position, hash_table: &HashTable) -> Vec<String> {
     let mut moves = Vec::new();
-    get_moves_inner(pos, is_tsumi, hash_table, &mut moves);
+    get_moves_inner(pos, hash_table, &mut moves);
     moves
 }
-fn get_moves_inner(pos: &mut Position, is_tsumi: bool, hash_table: HashTable, moves: &mut Vec<String>) {
+fn get_moves_inner(pos: &mut Position, hash_table: &HashTable, moves: &mut Vec<String>) {
     let attacker = pos.side_to_move() == Color::Black;
     let mut best = Option::None;
     let mut ply_to_leaf = -1;
     for (hash, mov) in generate_children(pos).0 {
         let (p, d, ply) = look_up_hash(&hash, &hash_table);
-        if if is_tsumi == attacker { *d == 0 } else { *p == 0 } && ply_to_leaf<*ply {
+        if if attacker { *d == 0 } else { *p == 0 } && ply_to_leaf<*ply {
             best = Option::Some(mov);
             ply_to_leaf = *ply;
         }
@@ -344,9 +237,40 @@ fn get_moves_inner(pos: &mut Position, is_tsumi: bool, hash_table: HashTable, mo
         Option::Some(best) => {
             moves.push(best.to_string());
             pos.make_move(best).unwrap();
-            get_moves_inner(pos, is_tsumi, hash_table, moves);
+            get_moves_inner(pos, hash_table, moves);
+            pos.unmake_move().unwrap();
         },
         _ => {
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dfpn() {
+        BBFactory::init();
+
+        // let sfen_no_tsumi = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1";
+        let sfen = "8l/6s2/4+P2kn/6pB1/8p/7R1/9/9/9 b Br4g3s3n3l15p 1";
+        let mut pos = Position::new();
+        pos.set_sfen(sfen).unwrap();
+        assert_eq!(true, dfpn(&mut pos).is_tsumi);
+
+        let sfen = "8l/6s2/4S2kn/6pB1/8p/7R1/9/9/9 b Br4g2s3n3l16p 1";
+        let mut pos = Position::new();
+        pos.set_sfen(sfen).unwrap();
+        let result = dfpn(&mut pos);
+        assert_eq!(true, result.is_tsumi);
+
+        let sfen = "7nl/5+RBk1/9/6+r2/7pP/9/9/9/9 b Lb4g4s3n2l16p 1";
+        let mut pos = Position::new();
+        pos.set_sfen(sfen).unwrap();
+        let result = dfpn(&mut pos);
+        assert_eq!(5, result.moves.len());
+        assert_eq!(true, result.is_tsumi);
+
     }
 }
