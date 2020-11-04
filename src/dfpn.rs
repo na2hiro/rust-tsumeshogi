@@ -89,7 +89,7 @@ fn mid(pos: &mut Position, phi: u64, delta: u64, hash_table: &mut HashTable) -> 
 
     let (children, mut node_count_incl_temporary) = generate_children(pos);
 
-    // println!("{}, {:?}", pos, children);
+    println!("{}, {:?}", pos, children);
 
     // Leaf node
     if children.is_empty() {
@@ -209,8 +209,10 @@ fn sum_phi(children: &Vec<(u64, Move)>, hash_table: &mut HashTable) -> u64 {
     for (hash, _) in children {
         let (p, _, _) = look_up_hash(&hash, &hash_table);
         if *p == MAX {
-            // println!("Hmm going to overflow? {}", mov);
             return MAX;
+        }
+        if *p == MAX - 1 {
+            return MAX; // TODO is it ok?
         }
         sum += p;
     }
@@ -253,7 +255,6 @@ mod tests {
     fn test_dfpn() {
         BBFactory::init();
 
-        // let sfen_no_tsumi = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1";
         let sfen = "8l/6s2/4+P2kn/6pB1/8p/7R1/9/9/9 b Br4g3s3n3l15p 1";
         let mut pos = Position::new();
         pos.set_sfen(sfen).unwrap();
@@ -271,6 +272,15 @@ mod tests {
         let result = dfpn(&mut pos);
         assert_eq!(5, result.moves.len());
         assert_eq!(true, result.is_tsumi);
+    }
 
+    #[test]
+    fn test_dfpn_no_tsumi() {
+        BBFactory::init();
+        let sfen = "8l/6s2/7kn/4G1pB1/8p/7R1/9/9/9 b Br3g3s3n3l16p 1";
+        let mut pos = Position::new();
+        pos.set_sfen(sfen).unwrap();
+        let result = dfpn(&mut pos);
+        assert_eq!(false, result.is_tsumi);
     }
 }

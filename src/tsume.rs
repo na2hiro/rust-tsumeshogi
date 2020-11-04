@@ -52,6 +52,7 @@ fn check_henbetsu(pos: &mut Position, hash_table: &mut HashTable) -> Vec<String>
     get_moves(pos, hash_table)
 }
 fn check_henbetsu_inner(pos: &mut Position, hash_table: &mut HashTable, threshold_pn: u64) -> HenbetsuResult {
+    println!("{}", pos);
     if pos.side_to_move() == Color::Black {
         let mut best = Option::None;
         let mut ply_to_leaf_min = PLY_MAX;
@@ -118,5 +119,22 @@ fn check_henbetsu_inner(pos: &mut Position, hash_table: &mut HashTable, threshol
                 CheckedEverything(MAX)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dfpn() {
+        BBFactory::init();
+
+        let sfen = "7nl/5+RBk1/9/6+r2/7pP/9/9/9/9 b Lb4g4s3n2l16p 1";
+        let mut pos = Position::new();
+        pos.set_sfen(sfen).unwrap();
+        let result = tsume(&mut pos);
+        assert_eq!(5, result.moves().len());
+        assert_eq!(true, result.is_tsumi());
     }
 }

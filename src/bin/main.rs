@@ -1,6 +1,5 @@
 use tsumeshogi_lib::tsume::{tsume};
 use tsumeshogi_lib::naive_df::{naive_df};
-use tsumeshogi_lib::shogi_utils::{generate_children};
 
 use shogi::{Position, Move};
 use shogi::bitboard::Factory as BBFactory;
@@ -16,7 +15,7 @@ fn main() {
     // let sfen = "7nl/7k1/9/5P1Pp/9/8N/9/9/9 b GS2r2b3g3s2n3l15p 1"; // 5te where king needs to choose longest path
     // pos.set_sfen(std::env::args().nth(1).unwrap().as_str()).unwrap();
 
-    solve(sfen, tsume);
+    solve(sfen, dfpn);
 }
 
 fn solve<F>(sfen: &str, solver: F) where F: Fn(&mut Position) -> SearchResult {

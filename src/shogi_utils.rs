@@ -145,8 +145,7 @@ fn check_candidates (pos: &Position, color: Color) -> HashMap<PieceType, Bitboar
 }
 
 pub fn calculate_hash(pos: &Position) -> u64 {
-    let str = format!("{}", pos);
-    calculate_hash_gen(&str)
+    calculate_hash_gen(&pos)
 }
 
 fn calculate_hash_gen<T: Hash>(t: &T) -> u64 {
